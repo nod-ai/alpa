@@ -325,8 +325,8 @@ def distributed_profile_on_mesh(meshes: Sequence[VirtualPhysicalMesh], layers,
 
     print("- Compile all stages")
     try:
-        compiled_outputs = compile_all(stages, num_micro_batches,
-                                       default_as_option)
+        compiled_outputs = default_as_option.compile_all(
+            stages, num_micro_batches, default_as_option)
     except RayActorError as e:
         logger.warning(f"Compilation fatal error: {e}")
         timers("stage-construction-compilation").suspend()
@@ -337,10 +337,10 @@ def distributed_profile_on_mesh(meshes: Sequence[VirtualPhysicalMesh], layers,
     # shape of compute_cost and max_n_succ_stages:
     # (num_layers, num_layers, num_autosharding_configs)
     timers("stage-construction-profiling").start()
-    (compute_cost, max_n_succ_stages,
-     is_profiled) = profile_all(stages, compiled_outputs, meshes, num_layers,
-                                num_autosharding_configs, num_micro_batches,
-                                auto_stage_option, mesh_cached_result)
+    (compute_cost,
+     max_n_succ_stages, is_profiled) = default_as_option.profile_all(
+         stages, compiled_outputs, meshes, num_layers, num_autosharding_configs,
+         num_micro_batches, auto_stage_option, mesh_cached_result)
     timers("stage-construction-profiling").suspend()
     return compute_cost, max_n_succ_stages, is_profiled
 

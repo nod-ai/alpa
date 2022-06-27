@@ -33,6 +33,7 @@ from jax._src.lib import xla_client as xc, xla_extension as xe
 from jax.core import ShapedArray
 from jax.interpreters import pxla
 
+import alpa
 from alpa.global_env import global_config
 from alpa.parallel_plan import StagePlan
 from alpa.timer import timers
@@ -76,6 +77,34 @@ class AutoShardingOption:
     force_simple_heuristic: str = ""
     # The threshold of all-reduce combiner in bytes.
     all_reduce_threshold: int = 1 << 60
+
+    def compile_all(self, stages, num_micro_batches, default_as_option):
+        from alpa.pipeline_parallel.stage_profiling import compile_all
+        return compile_all(stages, num_micro_batches, default_as_option)
+
+    def profile_all(
+        self,
+        stages,
+        compiled_outputs: Sequence[
+            "alpa.pipeline_parallel.stage_profiling.CompileOutput"],
+        meshes,
+        num_layers,
+        num_autosharding_configs,
+        num_micro_batches,
+        auto_stage_option,
+        mesh_cached_result,
+    ):
+        from alpa.pipeline_parallel.stage_profiling import profile_all
+        return profile_all(
+            stages,
+            compiled_outputs,
+            meshes,
+            num_layers,
+            num_autosharding_configs,
+            num_micro_batches,
+            auto_stage_option,
+            mesh_cached_result,
+        )
 
 
 class LogicalDeviceMesh:
