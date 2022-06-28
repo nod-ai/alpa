@@ -49,6 +49,10 @@ INFINITY_COST = 1e13
 @dataclasses.dataclass
 class AutoShardingOption:
     """Options of the auto-sharding solver."""
+    # The auto-sharding algorithm to use. Possible values are:
+    # "alpa_ilp", "nod".
+    algorithm: str = "alpa_ilp"
+
     # Whether enable auto-sharding. If it is False, then the solver
     # does tho run ILP but only uses the ShardingPropagation pass.
     enable_auto_sharding: bool = True
@@ -311,6 +315,9 @@ def run_auto_sharding_pass(
     grad_acc_num_micro_batches = None
 
     with XlaPassContext({
+            "auto_sharding::algorithm":
+                as_option.algorithm,
+
             # Auto-sharding solver options
             "auto_sharding::enable":
                 as_option.enable_auto_sharding,
