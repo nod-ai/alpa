@@ -11,7 +11,7 @@ import optax
 from flax import linen as nn
 from flax.core.frozen_dict import FrozenDict as FrozenDictFlax
 
-from alpa.api import init, shutdown, parallelize, grad, value_and_grad
+from alpa.api import init, shutdown, parallelize, grad, value_and_grad, ParallelMethod
 from alpa.model.bert_model import BertConfig, FlaxBertLayer
 from alpa.model.model_util import FlaxBaseModelOutput, TrainState
 from alpa.parallel_method import PipeshardParallel
@@ -251,10 +251,12 @@ class PipelineBasicTest(unittest.TestCase):
                 use_value_and_grad: bool = False,
                 stage_option: Optional[StageOption] = None,
                 as_option: Optional[AutoShardingOption] = None,
-                do_numerical_test: bool = True):
-        method = PipeshardParallel(num_micro_batches=4)
-        method.stage_option = stage_option or UniformStageOption()
-        method.as_option = as_option or AutoShardingOption()
+                do_numerical_test: bool = True,
+                method: ParallelMethod = None):
+        if method is None:
+            method = PipeshardParallel(num_micro_batches=4)
+            method.stage_option = stage_option or UniformStageOption()
+            method.as_option = as_option or AutoShardingOption()
 
         # Init model and optimizer
         batch_size = 64

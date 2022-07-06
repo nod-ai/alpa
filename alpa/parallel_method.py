@@ -143,6 +143,17 @@ class Zero3Parallel(ShardParallel):
         super().__init__(devices, num_micro_batches, as_option)
 
 
+class InterOpConfig:
+    """
+    Args:
+        is_inter_op_construction_enabled: If set to false skips the inter-op pipeline construction.
+        It cuts short the process after the profiling of submesh-stage pairs.
+    """
+
+    def __init__(self, is_inter_op_construction_enabled: bool = True):
+        self.is_inter_op_construction_enabled = is_inter_op_construction_enabled
+
+
 class PipeshardParallel(ParallelMethod):
     """
     Use pipeshard parallelism which combines pipeline parallelism and
@@ -185,7 +196,8 @@ class PipeshardParallel(ParallelMethod):
             auto_stage_imbalance_tolerance: float = np.inf,
             use_hlo_cost_model: bool = False,
             profiling_database_filename: Optional[str] = None,
-            cached_compute_cost: Optional[str] = None):
+            cached_compute_cost: Optional[str] = None,
+            inter_op_config: InterOpConfig = None):
         self.devices = devices
         self.num_micro_batches = num_micro_batches
         self.as_option = default_auto_sharding_option or AutoShardingOption()
@@ -201,6 +213,8 @@ class PipeshardParallel(ParallelMethod):
             self.stage_option = UniformStageOption()
         else:
             raise ValueError(f"Invalid stage mode: {stage_mode}")
+        self.inter_op_config = (InterOpConfig()
+                                if inter_op_config is None else inter_op_config)
 
     def compile_executable(
         self,
@@ -225,7 +239,7 @@ class PipeshardParallel(ParallelMethod):
         return compile_pipeshard_executable(
             fun, in_tree, out_tree_thunk, static_argnums, donated_invars,
             batch_invars, mesh, self.num_micro_batches, self.pipeline_schedule,
-            self.as_option, self.stage_option, *avals)
+            self.as_option, self.stage_option, self.inter_op_config, *avals)
 
 
 class ManualPipeshardParallel(PipeshardParallel):

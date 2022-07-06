@@ -520,7 +520,8 @@ def cluster_layers_and_slice_mesh(
         final_outvars: Sequence[Var], num_micro_batches: int, batch_size: int,
         jax_apply_layers: Sequence[JaxPipelineComputation],
         apply_grad_global_info: Tuple, pipeline_schedule: str,
-        default_as_option: AutoShardingOption, stage_option: StageOption):
+        default_as_option: AutoShardingOption, stage_option: StageOption,
+        inter_op_config: "alpa.parallel_method.InterOpConfig"):
     """
     Stage-mesh assignment.
 
@@ -581,6 +582,8 @@ def cluster_layers_and_slice_mesh(
             donation_mapping, final_outvars, jax_apply_layers,
             apply_grad_global_info, num_micro_batches, default_as_option,
             stage_option)
+        if not inter_op_config.is_inter_op_construction_enabled:
+            return None, None, None, None, None
         _, solution = dp(num_layers, virtual_mesh.num_devices,
                          num_micro_batches, submesh_choices,
                          num_autosharding_configs, compute_cost,

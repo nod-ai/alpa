@@ -37,13 +37,24 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+class InvalidExecutable:
+
+    def __init__(self, exception: Exception):
+        self.exception = exception
+
+    def launch_on_driver(self, *args):
+        raise self.exception
+
+
 def compile_pipeshard_executable(
         fun: lu.WrappedFun, in_tree: PyTreeDef,
         out_tree_thunk: Callable[[], PyTreeDef], static_argnums: Sequence[int],
         donated_invars: Sequence[bool], batch_invars: Sequence[bool],
         virtual_mesh: VirtualPhysicalMesh, num_microbatch: int,
         pipeline_schedule: str, default_as_option: AutoShardingOption,
-        stage_option: StageOption, *avals: Sequence[AbstractValue]):
+        stage_option: StageOption,
+        inter_op_config: "alpa.parallel_method.InterOpConfig",
+        *avals: Sequence[AbstractValue]):
     """
     Compile a callable for pipeshard parallel which combines
     pipeline parallelism and 2d shard parallelsim.
@@ -69,7 +80,11 @@ def compile_pipeshard_executable(
     pipeshard_config = compile_pipeshard_executable_internal(
         closed_jaxpr, full_batch_closed_jaxpr, micro_batch_size, in_tree,
         donated_invars, batch_invars, virtual_mesh, num_microbatch,
-        pipeline_schedule, default_as_option, stage_option, name_base, None)
+        pipeline_schedule, default_as_option, stage_option, name_base, None,
+        inter_op_config)
+    if not inter_op_config.is_inter_op_construction_enabled:
+        return InvalidExecutable(
+            RuntimeError("Inter-op construction is disabled."))
 
     executable = PipeshardDriverExecutable(
         mesh_group=virtual_mesh.launched_physical_mesh_group,
@@ -88,8 +103,8 @@ def compile_pipeshard_executable_internal(
         batch_invars: Sequence[bool], virtual_mesh: VirtualPhysicalMesh,
         num_microbatch: int, pipeline_schedule: str,
         default_as_option: AutoShardingOption, stage_option: StageOption,
-        name_base: str,
-        output_shardings: Optional[Sequence[pxla.ShardingSpec]]):
+        name_base: str, output_shardings: Optional[Sequence[pxla.ShardingSpec]],
+        inter_op_config: "alpa.parallel_method.InterOpConfig"):
     global_invars = closed_jaxpr.jaxpr.invars
     global_outvars = closed_jaxpr.jaxpr.outvars
     gensym_func = gensym([closed_jaxpr.jaxpr])
@@ -144,7 +159,9 @@ def compile_pipeshard_executable_internal(
          jax_pipeline_layers, virtual_mesh, donation_mapping, acc_grad_outvars,
          num_microbatch, micro_batch_size, jax_apply_layers,
          apply_grad_global_info, pipeline_schedule, default_as_option,
-         stage_option)
+         stage_option, inter_op_config)
+    if not inter_op_config.is_inter_op_construction_enabled:
+        return None
     num_meshes = len(sliced_virtual_meshes)
     debug_compilation_time("stage construction")
 

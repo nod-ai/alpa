@@ -20,6 +20,7 @@ from alpa.pipeline_parallel.layer_construction import (
 from alpa.shard_parallel.auto_sharding import AutoShardingOption
 from alpa.serialization import save_checkpoint, restore_checkpoint
 from alpa.timer import timers
+from alpa.pipeline_parallel.compile_executable import InvalidExecutable
 
 from . import api
 from . import collective
