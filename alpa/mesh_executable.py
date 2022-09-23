@@ -10,7 +10,7 @@ workers.
 """
 from abc import ABC, abstractmethod
 import logging
-from typing import Sequence, Optional
+from typing import Sequence, Optional, Dict
 import os
 
 import jax.numpy as jnp
@@ -79,9 +79,19 @@ class MeshDriverExecutable(ABC):
         """Return the HLO IR in the text format."""
         raise NotImplementedError()
 
+    def get_hlo_module_protos(self, status: HloStatus) -> Dict[str, bytes]:
+        """Returns a set of named serialized HLO Modules."""
+        raise NotImplementedError()
+
     def get_total_allocation_size(self):
         """Get the total memory allocation size in bytes."""
         raise NotImplementedError()
+
+    def dump_hlo_module_protos(self, path_prefix: str):
+        hlo_modules = self.get_hlo_module_protos(HloStatus.FULLY_OPTIMIZED)
+        for name, proto in hlo_modules.items():
+            with open(f"{path_prefix}_{name}_hlo_module.pb.bin", "w") as f:
+                f.write(proto)
 
     def dump_debug_info(self, folder: str):
         """
@@ -112,6 +122,10 @@ class MeshWorkerExecutable(ABC):
 
     def get_hlo_text(self):
         """Return the HLO IR in the text format."""
+        raise NotImplementedError()
+
+    def get_hlo_module_protos(self) -> Dict[str, bytes]:
+        """Returns a set of named serialized HLO Modules."""
         raise NotImplementedError()
 
     def get_total_allocation_size(self):
@@ -269,6 +283,7 @@ class NormalMeshDriverExecutable(MeshDriverExecutable):
 
         # Send the executable to workers
         self.fully_optimized_hlo_text = None
+        self.fully_optimized_hlo_module_protos = None
         self.exec_uuid = next_mesh_executable_uuid()
         self._set_executable(physical_mesh, hlo_module, stage_plan)
 
@@ -302,6 +317,11 @@ class NormalMeshDriverExecutable(MeshDriverExecutable):
                     backend, hlo_module, stage_plan, physical_mesh.num_devices)
             self.fully_optimized_hlo_text = self.compiled.hlo_modules(
             )[0].to_string()
+            self.fully_optimized_hlo_module_protos = {
+                "all":
+                    self.compiled.hlo_modules()
+                    [0].as_serialized_hlo_module_proto()
+            }
 
     def launch_on_driver(self, *args, **kwargs):
         """Launch the executable on the driver."""
@@ -446,6 +466,20 @@ class NormalMeshDriverExecutable(MeshDriverExecutable):
         else:
             raise ValueError(f"Invalid status: {status}")
 
+    def get_hlo_module_protos(
+            self,
+            status: HloStatus = HloStatus.FULLY_OPTIMIZED) -> Dict[str, bytes]:
+        if status == HloStatus.FULLY_OPTIMIZED:
+            if self.fully_optimized_hlo_module_protos is not None:
+                return self.fully_optimized_hlo_module_protos
+            assert isinstance(self.physical_mesh, DistributedPhysicalDeviceMesh)
+            self.fully_optimized_hlo_module_protos = ray.get(
+                self.physical_mesh.workers[0].get_exec_hlo_module_protos.remote(
+                    self.exec_uuid))
+            return self.fully_optimized_hlo_module_protos
+        else:
+            raise ValueError(f"Invalid status: {status}")
+
     def dump_debug_info(self, folder: str):
         """
         Dump intermediate representations and other informations for debugging.
@@ -456,6 +490,8 @@ class NormalMeshDriverExecutable(MeshDriverExecutable):
         prefix = os.path.join(folder, name)
         with open(f"{prefix}.hlo", "w") as f:
             f.write(self.get_hlo_text())
+
+        self.dump_hlo_module_protos(prefix)
 
 
 def get_buffers(buffer_dict, uuids):
@@ -526,6 +562,12 @@ class NormalMeshWorkerExecutable(MeshWorkerExecutable):
 
     def get_hlo_text(self):
         return self.compiled.hlo_modules()[0].to_string()
+
+    def get_hlo_module_protos(self) -> Dict[str, bytes]:
+        return {
+            "all":
+                self.compiled.hlo_modules()[0].as_serialized_hlo_module_proto()
+        }
 
     def get_total_allocation_size(self):
         return self.compiled.total_allocation_size()
@@ -678,6 +720,7 @@ class GradAccMeshDriverExecutable(MeshDriverExecutable):
                     num_grads, num_micro_batches)
             # The following members will be fetched from the workers later
             self.fully_optimized_hlo_text = None
+            self.fully_optimized_hlo_module_protos = None
             self.grad_sync_channel_ids = None
         else:
             assert isinstance(physical_mesh, LocalPhysicalDeviceMesh)
@@ -702,7 +745,14 @@ class GradAccMeshDriverExecutable(MeshDriverExecutable):
             self.skip_allreduce_env_name = (
                 self.accumulate_grad.hlo_modules()[0].name() +
                 "XLA_SKIP_NCCL_COLLECTIVE_IDS")
-
+            self.fully_optimized_hlo_module_protos = {
+                "accumulate_grad":
+                    self.accumulate_grad.hlo_modules()
+                    [0].as_serialized_hlo_module_proto(),
+                "apply_grad":
+                    self.apply_grad.hlo_modules()
+                    [0].as_serialized_hlo_module_proto()
+            }
         # Set up timers
         self.timer_name = get_execution_timer_name(self.exec_uuid)
         self.sync_func = get_sync_func_driver(physical_mesh)
@@ -862,6 +912,20 @@ class GradAccMeshDriverExecutable(MeshDriverExecutable):
         else:
             raise ValueError(f"Invalid status: {status}")
 
+    def get_hlo_module_protos(
+            self,
+            status: HloStatus = HloStatus.FULLY_OPTIMIZED) -> Dict[str, bytes]:
+        if status == HloStatus.FULLY_OPTIMIZED:
+            if self.fully_optimized_hlo_module_protos is not None:
+                return self.fully_optimized_hlo_module_protos
+            assert isinstance(self.physical_mesh, DistributedPhysicalDeviceMesh)
+            self.fully_optimized_hlo_module_protos = ray.get(
+                self.physical_mesh.workers[0].get_exec_hlo_module_protos.remote(
+                    self.exec_uuid))
+            return self.fully_optimized_hlo_module_protos
+        else:
+            raise ValueError(f"Invalid status: {status}")
+
     def dump_debug_info(self, folder: str):
         """
         Dump intermediate representations and other informations for debugging.
@@ -874,6 +938,8 @@ class GradAccMeshDriverExecutable(MeshDriverExecutable):
             f.write(self.get_hlo_text())
         with open(f"{prefix}.grad_sync_channel_ids.txt", "w") as f:
             f.write(str(self.grad_sync_channel_ids) + "\n")
+
+        self.dump_hlo_module_protos(prefix)
 
 
 class GradAccMeshWorkerExecutable(MeshWorkerExecutable):
@@ -978,6 +1044,16 @@ class GradAccMeshWorkerExecutable(MeshWorkerExecutable):
     def get_hlo_text(self):
         return (self.accumulate_grad.hlo_modules()[0].to_string() +
                 self.apply_grad.hlo_modules()[0].to_string())
+
+    def get_hlo_module_protos(self) -> Dict[str, bytes]:
+        return {
+            "accumulate_grad":
+                self.accumulate_grad.hlo_modules()
+                [0].as_serialized_hlo_module_proto(),
+            "apply_grad":
+                self.apply_grad.hlo_modules()
+                [0].as_serialized_hlo_module_proto()
+        }
 
     def get_total_allocation_size(self):
         """Get the total allocated memory size of this executable."""

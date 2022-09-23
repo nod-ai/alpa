@@ -27,7 +27,7 @@ import pickle
 import shutil
 import threading
 import time
-from typing import Any, List, Union, Sequence, Tuple, Optional, Callable
+from typing import Any, List, Union, Sequence, Tuple, Optional, Callable, Dict
 
 import jax
 from jax import core, xla, device_put
@@ -269,6 +269,9 @@ class MeshHostWorker:
 
     def get_exec_hlo_text(self, uuid: int):
         return self.executables[uuid].get_hlo_text()
+
+    def get_exec_hlo_module_protos(self, uuid: int) -> Dict[str, bytes]:
+        return self.executables[uuid].get_hlo_module_protos()
 
     def get_exec_total_allocation_size(self, uuid: int):
         return self.executables[uuid].get_total_allocation_size()
